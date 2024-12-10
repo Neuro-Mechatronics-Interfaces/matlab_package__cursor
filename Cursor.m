@@ -20,19 +20,15 @@ classdef Cursor < handle
         function obj = Cursor()
             % Ensure the folder is on the MATLAB path
             folderPath = fileparts(mfilename('fullpath'));
-            if ~contains(path, folderPath)
-                addpath(folderPath);
-            end
-            
             % Check for compiled MEX file
-            mexFile = fullfile(folderPath, 'WinJoystickMex.mexw64');
+            mexFile = fullfile(pwd, 'WinJoystickMex.mexw64');
             sourceFile = fullfile(folderPath, 'WinJoystickMex.c');
             
             if ~isfile(mexFile)
                 if isfile(sourceFile)
                     fprintf('Compiling MEX file from source: %s\n', sourceFile);
                     try
-                        mex('-outdir', folderPath, sourceFile, '-lwinmm');
+                        mex('-outdir', pwd, sourceFile, '-lwinmm');
                     catch ME
                         error('Failed to compile MEX file: %s\nError: %s', sourceFile, ME.message);
                     end
