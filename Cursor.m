@@ -7,7 +7,13 @@ classdef Cursor < handle
         LogFile = ''; % Log file name
         LogFID = -1; % File identifier for logging
         CursorPosition = [0, 0]; % Apparent cursor position (x, y)
-        JoystickState = [0, 0]; % Raw joystick state (x, y)
+        CursorVelocity = [0, 0]; % Apparent cursor velocity (x, y)
+        CursorAcceleration = [0, 0]; % Apparent cursor acceleration (x, y)
+        DragCoefficients = [0.75, 0.75]; % "Drag" on cursor (related to velocity; <x,y>)
+        VelocityGains = [1e-1, 1e-1]; % Gains on <x, y> velocity
+        VelocityDeadzones = [0.010, 0.010]; % Deadzones for <x,y>
+        AccelerationGains = [0.05, 0.05]; % Gains on <x, y> acceleration
+        JoystickState = zeros(1,2,'int8'); % Raw joystick state (x, y)
         ButtonState = 0; % Raw button state
         SmoothingFactor = 0.2; % Smoothing factor for cursor motion
         FigureHandle = []; % Handle to the visualization figure
@@ -48,6 +54,7 @@ classdef Cursor < handle
                 if obj.LoggingEnabled
                     obj.openLogFile();
                 end
+                view(obj); % Pull up the visualization
                 start(obj.Timer);
             end
         end
@@ -103,8 +110,13 @@ classdef Cursor < handle
             obj.ButtonState = buttons;
 
             % Apply smoothing to cursor position
-            obj.CursorPosition = obj.CursorPosition * (1 - obj.SmoothingFactor) + ...
-                obj.JoystickState * obj.SmoothingFactor;
+            delta = double(obj.JoystickState);
+            obj.CursorAcceleration = obj.CursorAcceleration * (1 - obj.SmoothingFactor) + ...
+                delta * obj.SmoothingFactor - (1 - abs(delta)) .* obj.DragCoefficients .* obj.CursorVelocity;
+            obj.CursorVelocity = max(min(obj.CursorVelocity + obj.CursorAcceleration .* obj.AccelerationGains,1),-1);
+            v = obj.CursorVelocity .* obj.VelocityGains;
+            v(abs(v) < obj.VelocityDeadzones) = 0;
+            obj.CursorPosition = max(min(obj.CursorPosition + v, 1),-1);
 
             % Log data if enabled
             if obj.LoggingEnabled && obj.LogFID > 0
