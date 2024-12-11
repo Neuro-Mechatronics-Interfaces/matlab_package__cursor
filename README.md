@@ -9,9 +9,9 @@ Simple `MATLAB` Cursor class to log/display 2D position of virtual cursor that i
 - Automatic compilation of `WinJoystickMex` if not present.
 
 ## Installation
-Add this as a submodule to your existing project- but make sure to put it in a folder named `@Cursor`
+Add this as a submodule to your existing project- but make sure to put it in a folder named `+cursor`
 ```bat
-git submodule add git@github.com:Neuro-Mechatronics-Interfaces/matlab_class__Cursor.git @Cursor
+git submodule add git@github.com:Neuro-Mechatronics-Interfaces/matlab_class__Cursor.git +cursor
 git submodule update --init --recursive
 ```
 
@@ -19,9 +19,15 @@ After adding the submodule, your MATLAB workspace (`project`, below) should look
 
 ```
 project/
-├── @Cursor/
-│   ├── Cursor.m          % Cursor class definition
-│   ├── WinJoystickMex.c  % Source file for the joystick MEX function
+├── +cursor/
+|   ├── createButtonListener.m % Utility function to generate listeners for indexed button events.
+│   ├── @Cursor/ 
+|   |   ├──Cursor.m           % Cursor class definition
+│   |   ├── WinJoystickMex.c  % Source file for the joystick MEX function
+│   ├── @GameContainer/ 
+|   |   ├──GameContainer.m    % Container class definition
+│   ├── @ButtonEventData/ 
+|       ├──ButtonEventData.m  % EventData definition for when BUTTON1-BUTTON8 is pressed. 
 ```
 
 ## Usage

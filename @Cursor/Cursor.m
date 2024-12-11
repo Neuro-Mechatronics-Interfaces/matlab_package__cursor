@@ -17,13 +17,13 @@ classdef Cursor < handle
     %
     % Usage:
     %   % Create a Cursor object
-    %   cursor = Cursor();
+    %   cObj = cursor.Cursor();
     %
     %   % Start logging to a binary file
-    %   cursor.setLogging(true, 'joystick_log.dat');
-    %   cursor.start();
+    %   cObj.setLogging(true, 'joystick_log.dat');
+    %   cObj.start();
     %   pause(5);  % Log data for 5 seconds
-    %   cursor.stop();
+    %   cObj.stop();
     %
     %   % Read the logged data
     %   logData = Cursor.readLogFile('joystick_log.dat');
@@ -38,17 +38,17 @@ classdef Cursor < handle
     %   grid on;
     %
     %   % Add event listeners for button press/release
-    %   addlistener(cursor, 'ButtonDown', @(src, eventdata) ...
+    %   addlistener(cObj, 'ButtonDown', @(src, eventdata) ...
     %       fprintf('ButtonDown: PreviousState=%d, NewState=%d\n', ...
     %               eventdata.PreviousState, eventdata.NewState));
-    %   addlistener(cursor, 'ButtonUp', @(src, eventdata) ...
+    %   addlistener(cObj, 'ButtonUp', @(src, eventdata) ...
     %       fprintf('ButtonUp: PreviousState=%d, NewState=%d\n', ...
     %               eventdata.PreviousState, eventdata.NewState));
     %
     %   % Start the cursor to detect button events
-    %   cursor.start();
+    %   cObj.start();
     %   pause(10);  % Monitor for 10 seconds
-    %   cursor.stop();
+    %   cObj.stop();
     %
     % Methods:
     %   Cursor          - Constructor to initialize a Cursor object.
@@ -56,7 +56,7 @@ classdef Cursor < handle
     %   stop            - Stops sampling and visualization.
     %   setLogging      - Enables/disables logging and specifies the log file.
     %   sample          - Timer callback to sample joystick and cursor states.
-    %   view            - Displays the cursor position in a 2D figure.
+    %   show            - Displays the cursor position in a 2D figure.
     %
     % Static Methods:
     %   readLogFile - Reads a binary log file created by the Cursor class.
@@ -68,50 +68,52 @@ classdef Cursor < handle
     %                new button states in the event data.
     %
     % Example 1: Logging and Reading Data
-    %   cursor = Cursor();
-    %   cursor.setLogging(true, 'joystick_log.dat');
-    %   cursor.start();
+    %   cObj = cursor.Cursor();
+    %   cObj.setLogging(true, 'joystick_log.dat');
+    %   cObj.start();
     %   pause(5);
-    %   cursor.stop();
+    %   cObj.stop();
     %
-    %   logData = Cursor.readLogFile('joystick_log.dat');
+    %   logData = cursor.Cursor.readLogFile('joystick_log.dat');
     %   disp(logData);
     %
     % Example 2: Using Event Listeners
-    %   cursor = Cursor();
-    %   addlistener(cursor, 'ButtonDown', @(src, eventdata) ...
+    %   cObj = cursor.Cursor();
+    %   addlistener(cObj, 'ButtonDown', @(src, eventdata) ...
     %       fprintf('ButtonDown: PreviousState=%d, NewState=%d\n', ...
     %               eventdata.PreviousState, eventdata.NewState));
-    %   addlistener(cursor, 'ButtonUp', @(src, eventdata) ...
+    %   addlistener(cObj, 'ButtonUp', @(src, eventdata) ...
     %       fprintf('ButtonUp: PreviousState=%d, NewState=%d\n', ...
     %               eventdata.PreviousState, eventdata.NewState));
     %
-    %   cursor.start();
+    %   cObj.start();
     %   pause(10);
-    %   cursor.stop();
+    %   cObj.stop();
     %
     % See also: timer, datetime, fread, fwrite, struct
 
-    properties
-        Timer % Timer object for background sampling
-        SamplePeriod = 0.01; % Sampling period (default 10 ms)
-        JoystickID = 0; % Joystick ID to use
-        LoggingEnabled = false; % Flag to indicate logging
-        LogFile = ''; % Log file name
-        LogFID = -1; % File identifier for logging
+    properties (Access = public)
+        Game (1,1) cursor.GameContainer = cursor.GameContainer();
         CursorPosition (1,2) single = zeros(1,2,'single'); % Apparent cursor position (x, y)
         CursorVelocity (1,2) single = zeros(1,2,'single'); % Apparent cursor velocity (x, y)
         CursorAcceleration (1,2) single = zeros(1,2,'single'); % Apparent cursor acceleration (x, y)
-        DragCoefficients (1,2) single = 0.75.*ones(1,2,'single'); % "Drag" on cursor (related to velocity; <x,y>)
-        VelocityGains (1,2) single = 0.1.*ones(1,2,'single'); % Gains on <x, y> velocity
-        VelocityDeadzones (1,2) single = 0.01.*ones(1,2,'single'); % Deadzones for <x,y>
-        AccelerationGains (1,2) single = 0.05.*ones(1,2,'single'); % Gains on <x, y> acceleration
         JoystickState = zeros(1,2,'int8'); % Raw joystick state (x, y)
         ButtonState = zeros(1,1,'uint8'); % Raw button state
+    end
+
+    properties (Hidden, Access = public)
+        DragCoefficients (1,2) single = 0.5.*ones(1,2,'single'); % "Drag" on cursor (related to velocity; <x,y>)
+        VelocityGains (1,2) single = 15.*ones(1,2,'single'); % Gains on <x, y> velocity
+        VelocityDeadzones (1,2) single = 0.0025.*ones(1,2,'single'); % Deadzones for <x,y>
+        AccelerationGains (1,2) single = 0.05.*ones(1,2,'single'); % Gains on <x, y> acceleration
         SmoothingFactor (1,1) single = single(0.2); % Smoothing factor for cursor motion
-        FigureHandle = []; % Handle to the visualization figure
-        AxesHandle = []; % Handle to the visualization axes
-        PointHandle = []; % Handle to the cursor point
+
+        SampleTimer % Timer object for background sampling
+        SamplePeriod = 0.01; % Sampling period (default 10 ms)
+        JoystickID = 0; % Joystick ID to use
+        LoggingEnabled = false; % Flag to indicate logging
+        LogFile = ""; % Log file name
+        LogFID = -1; % File identifier for logging
     end
 
     events
@@ -140,7 +142,7 @@ classdef Cursor < handle
                     error('MEX file is missing and source file (%s) is not available.', sourceFile);
                 end
             end
-            obj.Timer = timer( ...
+            obj.SampleTimer = timer( ...
                 'ExecutionMode', 'fixedRate', ...
                 'Period', obj.SamplePeriod, ...
                 'TimerFcn', @(~, ~) obj.sample());
@@ -148,19 +150,21 @@ classdef Cursor < handle
 
         % Start sampling
         function start(obj)
-            if strcmp(obj.Timer.Running, 'off')
+            %START  Start sampling from joystick/gamepad. Also starts logging (if setLogging(true, 'filename') was called).
+            if strcmp(obj.SampleTimer.Running, 'off')
                 if obj.LoggingEnabled
                     obj.openLogFile();
                 end
-                view(obj); % Pull up the visualization
-                start(obj.Timer);
+                show(obj); % Pull up the visualization
+                start(obj.SampleTimer);
             end
         end
 
         % Stop sampling
         function stop(obj)
-            if strcmp(obj.Timer.Running, 'on')
-                stop(obj.Timer);
+            %STOP Stop sampling from joystick/gamepad.
+            if strcmp(obj.SampleTimer.Running, 'on')
+                stop(obj.SampleTimer);
                 if obj.LoggingEnabled
                     obj.closeLogFile();
                 end
@@ -172,15 +176,15 @@ classdef Cursor < handle
             %SETLOGGING Sets logging state and filename.
             %
             % Syntax:
-            %   cursor.setLogging(enable, filename);
+            %   cObj.setLogging(enable, filename);
             %
             % Inputs:
             %   enable (1,1) logical - Set true to enable logging.
             %   filename (1,1) string - Sets file where logging happens.
             %
             % Example 1: Start logging
-            %   cursor.setLogging(true, 'mycursor.dat');
-            %   start(cursor);
+            %   cObj.setLogging(true, 'mycursor.dat');
+            %   start(cObj);
             %
             % Example 2: Stop logging
             %
@@ -189,7 +193,7 @@ classdef Cursor < handle
                 enable (1,1) logical
                 filename (1,1) string = "default_cursor_log.dat";
             end
-            if strcmp(obj.Timer.Running, 'on')
+            if strcmp(obj.SampleTimer.Running, 'on')
                 error('Cannot change logging state while sampling is running.');
             end
             obj.LoggingEnabled = enable;
@@ -201,9 +205,32 @@ classdef Cursor < handle
         end
 
         % Open log file
-        function openLogFile(obj)
-            if obj.LoggingEnabled && ~isempty(obj.LogFile)
-                obj.LogFID = fopen(obj.LogFile, 'wb');
+        function openLogFile(obj, logFile)
+            %OPENLOGFILE Opens log file to begin logging.
+            %
+            % Syntax:
+            %   cObj.openLogFile();
+            %   cObj.openLogFile(logFile);
+            %
+            % Inputs:
+            %   logFile (optional) - Can open new log directly here if no
+            %                        existing log is open. This is useful
+            %                        rather than using setLogging, if you
+            %                        want to manage the logging from
+            %                        another acquisition loop rather than
+            %                        implicitly from the animation timer in
+            %                        the view update loop. 
+            arguments
+                obj
+                logFile {mustBeTextScalar}
+            end
+            if obj.LogFID < 0
+                if nargin > 1
+                    obj.LogFile = logFile;
+                    obj.LogFID = fopen(logFile, 'wb');
+                else
+                    obj.LogFID = fopen(obj.LogFile, 'wb');
+                end
                 if obj.LogFID == -1
                     error('Failed to open log file: %s', obj.LogFile);
                 end
@@ -212,6 +239,7 @@ classdef Cursor < handle
 
         % Close log file
         function closeLogFile(obj)
+            %CLOSELOGFILE  Closes the binary log file.
             if obj.LogFID > 0
                 fclose(obj.LogFID);
                 obj.LogFID = -1;
@@ -220,92 +248,88 @@ classdef Cursor < handle
 
         % Timer callback for joystick sampling
         function sample(obj)
+            %SAMPLE  Read joystick and button data in timer-mediated loop.
             % Read joystick data
             [x, y, buttons] = WinJoystickMex(obj.JoystickID);
 
             % Update joystick state
             obj.JoystickState = [x, y];
              % Detect button state changes
-            if buttons > obj.PreviousButtonState
+            if buttons > obj.ButtonState
                 % Button pressed
-                eventdata = struct('PreviousState', obj.PreviousButtonState, 'NewState', buttons);
+                eventdata = cursor.ButtonEventData(obj.ButtonState, buttons);
                 notify(obj, 'ButtonDown', eventdata);
-            elseif buttons < obj.PreviousButtonState
+            elseif buttons < obj.ButtonState
                 % Button released
-                eventdata = struct('PreviousState', obj.PreviousButtonState, 'NewState', buttons);
+                eventdata = cursor.ButtonEventData(obj.ButtonState, buttons);
                 notify(obj, 'ButtonUp', eventdata);
             end
             obj.ButtonState = buttons;
 
-            % Apply smoothing to cursor position
+            % Apply smoothing to cObj position
             delta = single(obj.JoystickState);
             obj.CursorAcceleration = obj.CursorAcceleration * (1 - obj.SmoothingFactor) + ...
                 delta * obj.SmoothingFactor - (1 - abs(delta)) .* obj.DragCoefficients .* obj.CursorVelocity;
-            obj.CursorVelocity = max(min(obj.CursorVelocity + obj.CursorAcceleration .* obj.AccelerationGains,1),-1);
+            obj.CursorVelocity = max(min(obj.CursorVelocity + obj.CursorAcceleration .* obj.AccelerationGains, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
             v = obj.CursorVelocity .* obj.VelocityGains;
             v(abs(v) < obj.VelocityDeadzones) = 0;
-            obj.CursorPosition = max(min(obj.CursorPosition + v, 1),-1);
+            obj.CursorPosition = max(min(obj.CursorPosition + v, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
 
             % Log data if enabled
             if obj.LoggingEnabled && obj.LogFID > 0
                 % Create a binary buffer for the data
-                logData = [ ...
-                    single(posixtime(datetime('now')) * 1e6), ... % Timestamp (microseconds as single)
-                    single(obj.JoystickState), ...    % Joystick x, y
-                    single(obj.ButtonState), ...     % Button state
-                    single(obj.CursorPosition), ...  % Cursor x, y position
-                    single(obj.CursorVelocity), ...  % Cursor x, y velocity
-                    single(obj.CursorAcceleration) ... % Cursor x, y acceleration
-                    ];
-                % Write the packed binary data
-                fwrite(obj.LogFID, logData, 'single');
+                obj.logData();
             end
 
             % Update visualization
-            obj.updateVisualization();
+            update(obj);
         end
 
-        % View the cursor position
-        function view(obj)
-            if isempty(obj.FigureHandle) || ~isvalid(obj.FigureHandle)
-                obj.FigureHandle = figure('Name', 'Cursor Viewer', ...
-                    'NumberTitle', 'off', ...
-                    'CloseRequestFcn', @(~, ~) obj.closeView());
-                obj.AxesHandle = axes('Parent', obj.FigureHandle, ...
-                    'XLim', [-1, 1], 'YLim', [-1, 1], ...
-                    'XGrid', 'on', 'YGrid', 'on');
-                hold(obj.AxesHandle, 'on');
-                obj.PointHandle = plot(obj.AxesHandle, 0, 0, 'ro', 'MarkerSize', 10, 'MarkerFaceColor', 'r');
-            else
-                figure(obj.FigureHandle);
+        function logData(obj, extra)
+            %LOGDATA Gives option to externally log data to externally-opened binary file (i.e. in external acquisition loop). 
+            arguments
+                obj
+                extra (1,1) single = 0
             end
+            logData = [ ...
+                single(posixtime(datetime('now')) * 1e6), ... % Timestamp (microseconds as single)
+                single(obj.JoystickState), ...    % Joystick x, y
+                single(obj.ButtonState), ...     % Button state
+                single(obj.CursorPosition), ...  % Cursor x, y position
+                single(obj.CursorVelocity), ...  % Cursor x, y velocity
+                single(obj.CursorAcceleration) ... % Cursor x, y acceleration
+                single(extra)
+                ];
+            % Write the packed binary data
+            fwrite(obj.LogFID, logData, 'single');
         end
 
-        % Close the visualization
-        function closeView(obj)
-            if ~isempty(obj.FigureHandle) && isvalid(obj.FigureHandle)
-                delete(obj.FigureHandle);
-                obj.FigureHandle = [];
-                obj.AxesHandle = [];
-                obj.PointHandle = [];
-            end
+        function show(obj)
+            %SHOW Shows the Game.
+            show(obj.Game);
         end
 
-        % Update the visualization
-        function updateVisualization(obj)
-            if ~isempty(obj.PointHandle) && isvalid(obj.PointHandle)
-                set(obj.PointHandle, 'XData', obj.CursorPosition(1), 'YData', obj.CursorPosition(2));
-            end
+        function hide(obj)
+            %HIDE Hides the Game.
+            hide(obj.Game);
+        end
+
+        function update(obj)
+            %UPDATE Updates the Game visual state. 
+            setCursorPosition(obj.Game, obj.CursorPosition(1), obj.CursorPosition(2));
         end
 
         % Destructor
         function delete(obj)
+            %DELETE Overloaded delete ensures Timer is stopped/destroyed log-file is closed, and Game is shutdown.
             obj.stop();
-            if isvalid(obj.Timer)
-                delete(obj.Timer);
+            if isvalid(obj.SampleTimer)
+                delete(obj.SampleTimer);
+            end
+            if ~isempty(obj.Game)
+                delete(obj.Game);
             end
             obj.closeLogFile();
-            obj.closeView();
         end
     end
 
@@ -323,12 +347,12 @@ classdef Cursor < handle
             %   - logTable: A table containing the logged data fields.
             %
             % Example:
-            %   cursor = Cursor();
-            %   cursor.setLogging(true, 'joystick_data.dat');
-            %   cursor.start();
+            %   cObj = Cursor();
+            %   cObj.setLogging(true, 'joystick_data.dat');
+            %   cObj.start();
             %   pause(5);
-            %   cursor.stop();
-            %   cursor.setLogging(false);
+            %   cObj.stop();
+            %   cObj.setLogging(false);
             %   logData = Cursor.readLogFile('joystick_data.dat');
 
             if nargin < 1 || ~isfile(filename)
@@ -353,7 +377,7 @@ classdef Cursor < handle
             fclose(fid);
 
             % Parse the raw data
-            numFields = 10; % Number of fields per entry
+            numFields = 11; % Number of fields per entry
             numEntries = length(rawData) / numFields;
 
             if mod(length(rawData), numFields) ~= 0
@@ -371,10 +395,10 @@ classdef Cursor < handle
             logData.CursorPosition = reshapedData(:, 5:6);   % Cursor x, y position
             logData.CursorVelocity = reshapedData(:, 7:8);   % Cursor x, y velocity
             logData.CursorAcceleration = reshapedData(:, 9:10); % Cursor x, y acceleration
+            logData.Extra = reshapedData(:,11); % Extra 'key' values like sync state etc.
             logTable = struct2table(logData);
             logTable.Time.TimeZone = 'America/New_York';
             logTable.Time.Format = 'uuuu-MM-dd''T''HH:mm:ss.SSS';
         end
     end
-
 end
