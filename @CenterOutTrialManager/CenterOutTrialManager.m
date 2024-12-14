@@ -47,10 +47,14 @@ classdef CenterOutTrialManager < handle
         function delete(obj)
             %DELETE Ensures listeners are deleted on cleanup.
             if ~isempty(obj.TrialCompletedListener)
+                try %#ok<*TRYNC>
                 delete(obj.TrialCompletedListener);
+                end
             end
             if ~isempty(obj.StateManager)
-                delete(obj.StateManager);
+                try
+                    delete(obj.StateManager);
+                end
             end
         end
 

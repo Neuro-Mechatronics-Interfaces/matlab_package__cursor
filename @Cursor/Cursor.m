@@ -93,7 +93,7 @@ classdef Cursor < handle
     % See also: timer, datetime, fread, fwrite, struct
 
     properties (Access = public)
-        Game (1,1) cursor.GameContainer = cursor.GameContainer();
+        Game
         CursorPosition (1,2) single = zeros(1,2,'single'); % Apparent cursor position (x, y)
         CursorVelocity (1,2) single = zeros(1,2,'single'); % Apparent cursor velocity (x, y)
         CursorAcceleration (1,2) single = zeros(1,2,'single'); % Apparent cursor acceleration (x, y)
@@ -115,6 +115,7 @@ classdef Cursor < handle
         LoggingEnabled = false; % Flag to indicate logging
         LogFile = ""; % Log file name
         LogFID = -1; % File identifier for logging
+        LastTick (1,1) datetime = datetime();
     end
 
     properties (Access = protected)
@@ -156,10 +157,12 @@ classdef Cursor < handle
                     error('MEX file is missing and source file (%s) is not available.', sourceFile);
                 end
             end
+            obj.Game = cursor.GameContainer();
             obj.SampleTimer = timer( ...
                 'ExecutionMode', 'fixedRate', ...
                 'Period', obj.SamplePeriod, ...
-                'TimerFcn', @obj.sample);
+                'Name', "Cursor-Sampling Timer", ...
+                'TimerFcn', @(~,event)obj.sample(datetime(event.Data.time)));
             packagePath = fileparts(folderPath);
             obj.Manager = cursor.CenterOutTrialManager(fullfile(packagePath,'.trial_structure',structureFile));
             obj.GameOverListener = addlistener(obj.Manager, 'GameOver', @obj.handleGameOver);
@@ -241,6 +244,7 @@ classdef Cursor < handle
                     obj.openLogFile();
                 end
                 show(obj); % Pull up the visualization
+                obj.Game.setOnOffButtonState("Started");
                 obj.SampleTimer.UserData = datetime('now');
                 start(obj.SampleTimer);
             end
@@ -251,6 +255,7 @@ classdef Cursor < handle
             %STOP Stop sampling from joystick/gamepad.
             if strcmp(obj.SampleTimer.Running, 'on')
                 stop(obj.SampleTimer);
+                obj.Game.setOnOffButtonState("Stopped");
                 if obj.LoggingEnabled
                     obj.closeLogFile();
                 end
@@ -329,16 +334,16 @@ classdef Cursor < handle
             if obj.LogFID > 0
                 fclose(obj.LogFID);
                 obj.LogFID = -1;
+                obj.Game.setFileLabel(); % Revert to "Not Saving" text.
             end
         end
 
         % Timer callback for joystick sampling
-        function sample(obj, src, event)
+        function sample(obj, dt)
             %SAMPLE  Read joystick and button data in timer-mediated loop.
             
-            dt = datetime(event.Data.time);
-            delta_t = single(seconds(dt - src.UserData));
-            src.UserData = dt;
+            delta_t = single(seconds(dt - obj.LastTick));
+            obj.LastTick = dt;
             [x, y, buttons] = WinJoystickMex(obj.JoystickID);
 
             % Update joystick state
@@ -412,32 +417,47 @@ classdef Cursor < handle
         % Destructor
         function delete(obj)
             %DELETE Overloaded delete ensures Timer is stopped/destroyed log-file is closed, and Game is shutdown.
-            obj.stop();
-            if isvalid(obj.SampleTimer)
-                delete(obj.SampleTimer);
-            end
-            if ~isempty(obj.Game)
-                delete(obj.Game);
-            end
-            obj.closeLogFile();
             if ~isempty(obj.NewTrialListener)
-                delete(obj.NewTrialListener);
+                try %#ok<*TRYNC>
+                    delete(obj.NewTrialListener);
+                end
             end
             if ~isempty(obj.GameOverListener)
-                delete(obj.GameOverListener);
+                try
+                    delete(obj.GameOverListener);
+                end
             end
             if ~isempty(obj.NewStateListener)
-                delete(obj.NewStateListener);
+                try    
+                    delete(obj.NewStateListener);
+                end
             end
             if ~isempty(obj.NextListener)
-                delete(obj.NextListener);
+                try
+                    delete(obj.NextListener);
+                end
             end
             if ~isempty(obj.TargetListener)
-                delete(obj.TargetListener);
+                try
+                    delete(obj.TargetListener);
+                end
             end
             if ~isempty(obj.OnOffListener)
-                delete(obj.OnOffListener);
+                try
+                    delete(obj.OnOffListener);
+                end
             end
+            try
+                stop(obj.SampleTimer);
+            end
+            try 
+                delete(obj.SampleTimer);
+            end
+            obj.closeLogFile();
+            try
+                delete(obj.Game);
+            end
+            
         end
     end
 
@@ -472,6 +492,7 @@ classdef Cursor < handle
             if fid == -1
                 error('Failed to open file: %s', filename);
             end
+            obj.Game.setFileLabel(sprintf('File: %s', filename));
 
             try
                 % Read the binary data as single-precision floating point

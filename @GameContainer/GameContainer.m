@@ -1,5 +1,6 @@
 classdef GameContainer < handle
-    properties (Access = public)
+
+    properties (GetAccess = public, SetAccess = protected)
         Axes     % Handle to the axes
         Cursor   % Handle to the plotted cursor point
         Control  % struct with uicontrol elements
@@ -10,9 +11,6 @@ classdef GameContainer < handle
         Target1Location (1,2) double = [0 0];
         InTarget2 (1,1) logical = false;
         Target2Location (1,2) double = [0 0];
-    end
-
-    properties (Access = protected)
         Target1  % Handle to a primary target destination
         Target1Radius (1,1) {mustBePositive, mustBeInteger} = 32;%
         Target2  % Handle to a secondary target destination
@@ -57,7 +55,7 @@ classdef GameContainer < handle
                 'FontName','Consolas', ...
                 'ForegroundColor', 'k', ...
                 'BackgroundColor', 'w', ...
-                'FontSize', 20, 'FontWeight', 'bold', ...
+                'FontSize', 22, 'FontWeight', 'bold', ...
                 'Position', [5, 710, 380, 40], ...
                 'HorizontalAlignment', 'center');
             obj.Label.GameText = uicontrol(...
@@ -66,7 +64,7 @@ classdef GameContainer < handle
                 'FontName','Consolas', ...
                 'BackgroundColor', 'w', ...
                 'ForegroundColor', 'k', ...
-                'FontSize', 16, ...
+                'FontSize', 20, ...
                 'FontWeight', 'normal', ...
                 'Position', [5, 670, 380, 40], ...
                 'HorizontalAlignment', 'center');
@@ -76,8 +74,17 @@ classdef GameContainer < handle
                 'FontName','Consolas', ...
                 'BackgroundColor', 'w', ...
                 'ForegroundColor', 'k', ...
-                'FontSize', 16, 'FontWeight', 'normal', ...
+                'FontSize', 20, 'FontWeight', 'normal', ...
                 'Position', [5, 630, 380, 40], ...
+                'HorizontalAlignment', 'center');
+            obj.Label.FileText = uicontrol(...
+                'Parent', obj.Figure, 'Style', 'text', ...
+                "String", "Not Saving", ...
+                'FontName', 'Consolas', ...
+                'BackgroundColor', 'w', ...
+                'ForegroundColor', 'k', ...
+                'FontSize', 16, 'FontWeight', 'normal', ...
+                'Position', [5, 430, 380, 40], ...
                 'HorizontalAlignment', 'center');
             obj.Control = struct();
             obj.Control.Button = struct();
@@ -86,11 +93,13 @@ classdef GameContainer < handle
                 "String", "Start Cursor",...
                 "BackgroundColor", [0.4 0.4 1.0], ...
                 "ForegroundColor", 'k', ...
+                'FontSize', 16, 'FontWeight', 'bold', ...
                 "Position", [5 590, 380, 35], ...
                 "Callback", @obj.startCursor);
             obj.Control.Button.Next = uicontrol(obj.Figure, ...
                 "Style", 'pushbutton', ...
                 "String", "Start Game",...
+                'FontSize', 16, 'FontWeight', 'bold', ...
                 "Position", [5 550, 380, 35], ...
                 "Callback", @obj.startGame);
             faces = [1:20,1];
@@ -141,16 +150,31 @@ classdef GameContainer < handle
             notify(obj,'Next');
         end
 
-        function startCursor(obj, src, ~)
-            set(src,'String', "Stop Cursor",'ForegroundColor', 'w', 'BackgroundColor', [0.8 0.2 0.2], 'Callback', @obj.stopCursor);
+        function startCursor(obj, ~, ~)
+            obj.setOnOffButtonState("Started");
             eventData = cursor.OnOffEventData(true);
             notify(obj,'OnOff',eventData);
         end
 
-        function stopCursor(obj, src, ~)
-            set(src,'String', "Start Cursor", 'ForegroundColor', 'k', 'BackgroundColor', [0.4 0.4 1.0], 'Callback', @obj.startCursor);
+        function stopCursor(obj, ~, ~)
+            obj.setOnOffButtonState("Stopped");
             eventData = cursor.OnOffEventData(false);
             notify(obj,'OnOff',eventData);
+        end
+
+        function setOnOffButtonState(obj, state)
+            arguments
+                obj
+                state {mustBeMember(state, ["Stopped", "Started"])}
+            end
+            switch state
+                case "Stopped"
+                    set(obj.Control.Button.OnOff,'String', "Start Cursor", 'ForegroundColor', 'k', 'BackgroundColor', [0.4 0.4 1.0], 'Callback', @obj.startCursor);
+                case "Started"
+                    set(obj.Control.Button.OnOff,'String', "Stop Cursor",'ForegroundColor', 'w', 'BackgroundColor', [0.8 0.2 0.2], 'Callback', @obj.stopCursor);
+                otherwise
+                    error("Unhandled state: %s", state);
+            end
         end
 
         function nextTrial(obj, ~, ~)
@@ -163,6 +187,19 @@ classdef GameContainer < handle
 
         function setGameStateLabel(obj, gameStateText)
             obj.Label.GameText.String = gameStateText;
+        end
+        
+        function setFileLabel(obj, fileLabel)
+            arguments
+                obj
+                fileLabel {mustBeTextScalar} = "Not Saving";
+            end
+            obj.Label.FileText.String = fileLabel;
+            if strcmpi(fileLabel, "not saving")
+                obj.Label.FileText.FontSize = 16;
+            else
+                obj.Label.FileText.FontSize = 10;
+            end
         end
 
         function update(obj, x, y)
@@ -313,12 +350,12 @@ classdef GameContainer < handle
         end
 
         function delete(obj)
-            if ~isempty(obj.Figure)
-                if isvalid(obj.Figure)
-                    obj.Figure.DeleteFcn = [];
-                end
+            try %#ok<*TRYNC>
+                obj.Figure.DeleteFcn = [];
             end
-            delete(obj.Figure);
+            try
+                delete(obj.Figure);
+            end
         end
     end
 end
