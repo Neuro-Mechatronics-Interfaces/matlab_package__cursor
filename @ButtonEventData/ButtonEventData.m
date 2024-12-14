@@ -12,7 +12,7 @@ classdef ButtonEventData < event.EventData
     methods
         % Constructor
         function obj = ButtonEventData(previousState, newState)
-            % ButtonEventData Constructs an instance of ButtonEventData
+            %BUTTONEVENTDATA Constructs an instance of ButtonEventData
             %
             % Syntax:
             %   eventData = ButtonEventData(previousState, newState);
@@ -23,6 +23,10 @@ classdef ButtonEventData < event.EventData
             %
             % Outputs:
             %   eventData - An instance of ButtonEventData.
+            arguments
+                previousState (1,1) uint8
+                newState (1,1) uint8
+            end
             obj.PreviousState = previousState;
             obj.NewState = newState;
         end

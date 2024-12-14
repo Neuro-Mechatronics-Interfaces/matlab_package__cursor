@@ -102,6 +102,7 @@ classdef Cursor < handle
     end
 
     properties (Hidden, Access = public)
+        Manager (1,1) cursor.CenterOutTrialManager
         DragCoefficients (1,2) single = 0.5.*ones(1,2,'single'); % "Drag" on cursor (related to velocity; <x,y>)
         VelocityGains (1,2) single = 15.*ones(1,2,'single'); % Gains on <x, y> velocity
         VelocityDeadzones (1,2) single = 0.0025.*ones(1,2,'single'); % Deadzones for <x,y>
@@ -116,6 +117,15 @@ classdef Cursor < handle
         LogFID = -1; % File identifier for logging
     end
 
+    properties (Access = protected)
+        GameOverListener
+        NewTrialListener
+        NewStateListener
+        NextListener
+        TargetListener
+        OnOffListener
+    end
+
     events
         ButtonUp % Triggered when button is released
         ButtonDown % Triggered when button is pressed
@@ -123,7 +133,11 @@ classdef Cursor < handle
 
     methods
         % Constructor
-        function obj = Cursor()
+        function obj = Cursor(structureFile)
+            arguments
+                structureFile {mustBeTextScalar} = 'CenterOut.csv';
+            end
+
             % Ensure the folder is on the MATLAB path
             folderPath = fileparts(mfilename('fullpath'));
             % Check for compiled MEX file
@@ -145,7 +159,78 @@ classdef Cursor < handle
             obj.SampleTimer = timer( ...
                 'ExecutionMode', 'fixedRate', ...
                 'Period', obj.SamplePeriod, ...
-                'TimerFcn', @(~, ~) obj.sample());
+                'TimerFcn', @obj.sample);
+            packagePath = fileparts(folderPath);
+            obj.Manager = cursor.CenterOutTrialManager(fullfile(packagePath,'.trial_structure',structureFile));
+            obj.GameOverListener = addlistener(obj.Manager, 'GameOver', @obj.handleGameOver);
+            obj.NewTrialListener = addlistener(obj.Manager, 'NewTrial', @obj.handleNewTrial);
+            obj.NextListener= addlistener(obj.Game, 'Next', @obj.handleNext);
+            obj.NewStateListener = addlistener(obj.Manager.StateManager, 'NewState', @obj.handleNewState);
+            obj.TargetListener = addlistener(obj.Game, 'Target', @obj.handleTarget);
+            obj.OnOffListener = addlistener(obj.Game, 'OnOff', @obj.handleOnOff);
+        end
+
+        function handleNext(obj, ~, ~)
+            eventData = cursor.TrialCompletedEventData(false, -1, 100.0, 100.0);
+            obj.Manager.nextTrial(nan, eventData);
+        end
+
+        function handleOnOff(obj, ~, evt)
+            if evt.OnOff
+                start(obj);
+            else
+                stop(obj);
+            end
+        end
+
+        function handleTarget(obj, ~, evt)
+            obj.Manager.StateManager.setCursorTargetState(evt.Index, evt.InTarget);
+        end
+
+        function handleGameOver(obj, src, evt)
+            %HANDLEGAMEOVER  Handles "GameOver" events from the CenterOutTrialManager.
+            obj.Game.setPrimaryTargetVisible(false);
+            obj.Game.setSecondaryTargetVisible(false);
+            obj.Game.setGameStateLabel("Game Over");
+            disp(src);
+            disp(evt);
+            obj.Manager.resetIndex();
+            set(obj.Game.Control.Button.Next,'String','Start New Game','Callback',@(s,e)obj.Game.startGame(s,e));
+            
+        end
+
+        function handleNewTrial(obj, src, evt)
+            %HANDLENEWTRIAL  Handles "NextTrial" events from the CenterOutTrialManager.
+            
+            obj.Game.setPrimaryTargetPosition(evt.T1(1), evt.T1(2));
+            obj.Game.setPrimaryTargetSize(evt.TargetRadius(1));
+            obj.Game.setPrimaryTargetVisible(true);
+            obj.Game.setSecondaryTargetVisible(false);
+            obj.Game.setSecondaryTargetPosition(evt.T2(1), evt.T2(2));
+            obj.Game.setSecondaryTargetSize(evt.TargetRadius(2));
+            obj.Game.setTrialsLabel(src.NumSuccessful, src.NumAttempts);
+            src.StateManager.setTrialParameters(evt.Hold, evt.Limit);
+            drawnow();
+        end
+
+        function handleNewState(obj, src, ~)
+            %HANDLENEWSTATE  Handles "NewState" events from the CenterOutStateManager
+            switch src.State
+                case cursor.CenterOutState.t1_pre
+                    obj.Game.setPrimaryTargetColor([1 0 0]);
+                case cursor.CenterOutState.t1_hold_1
+                    obj.Game.setPrimaryTargetColor([0 1 1]);
+                case cursor.CenterOutState.t1_hold_2
+                    obj.Game.setSecondaryTargetColor([1 0 0]);
+                    obj.Game.setSecondaryTargetVisible(true);
+                case cursor.CenterOutState.go
+                    obj.Game.setPrimaryTargetVisible(false);
+                    obj.Game.setPrimaryTargetColor([1 0 0]);
+                case cursor.CenterOutState.t2_hold_1
+                    obj.Game.setSecondaryTargetColor([0 1 1]);
+                case cursor.CenterOutState.overshoot
+                    obj.Game.setSecondaryTargetColor([1 0 0]);
+            end
         end
 
         % Start sampling
@@ -156,6 +241,7 @@ classdef Cursor < handle
                     obj.openLogFile();
                 end
                 show(obj); % Pull up the visualization
+                obj.SampleTimer.UserData = datetime('now');
                 start(obj.SampleTimer);
             end
         end
@@ -247,9 +333,12 @@ classdef Cursor < handle
         end
 
         % Timer callback for joystick sampling
-        function sample(obj)
+        function sample(obj, src, event)
             %SAMPLE  Read joystick and button data in timer-mediated loop.
-            % Read joystick data
+            
+            dt = datetime(event.Data.time);
+            delta_t = single(seconds(dt - src.UserData));
+            src.UserData = dt;
             [x, y, buttons] = WinJoystickMex(obj.JoystickID);
 
             % Update joystick state
@@ -278,21 +367,27 @@ classdef Cursor < handle
             % Log data if enabled
             if obj.LoggingEnabled && obj.LogFID > 0
                 % Create a binary buffer for the data
-                obj.logData();
+                obj.logData(dt);
             end
 
-            % Update visualization
-            update(obj);
+            obj.update(obj.CursorPosition(1), obj.CursorPosition(2), delta_t);
         end
 
-        function logData(obj, extra)
+        function update(obj, x, y, delta_t)
+            %UPDATE  Updates with x/y coordinate and time since last update.
+            update(obj.Game, x, y);
+            update(obj.Manager, delta_t);
+        end
+
+        function logData(obj, dt, extra)
             %LOGDATA Gives option to externally log data to externally-opened binary file (i.e. in external acquisition loop). 
             arguments
                 obj
+                dt (1,1) datetime
                 extra (1,1) single = 0
             end
             logData = [ ...
-                single(posixtime(datetime('now')) * 1e6), ... % Timestamp (microseconds as single)
+                single(posixtime(dt) * 1e6), ... % Timestamp (microseconds as single)
                 single(obj.JoystickState), ...    % Joystick x, y
                 single(obj.ButtonState), ...     % Button state
                 single(obj.CursorPosition), ...  % Cursor x, y position
@@ -314,11 +409,6 @@ classdef Cursor < handle
             hide(obj.Game);
         end
 
-        function update(obj)
-            %UPDATE Updates the Game visual state. 
-            setCursorPosition(obj.Game, obj.CursorPosition(1), obj.CursorPosition(2));
-        end
-
         % Destructor
         function delete(obj)
             %DELETE Overloaded delete ensures Timer is stopped/destroyed log-file is closed, and Game is shutdown.
@@ -330,6 +420,24 @@ classdef Cursor < handle
                 delete(obj.Game);
             end
             obj.closeLogFile();
+            if ~isempty(obj.NewTrialListener)
+                delete(obj.NewTrialListener);
+            end
+            if ~isempty(obj.GameOverListener)
+                delete(obj.GameOverListener);
+            end
+            if ~isempty(obj.NewStateListener)
+                delete(obj.NewStateListener);
+            end
+            if ~isempty(obj.NextListener)
+                delete(obj.NextListener);
+            end
+            if ~isempty(obj.TargetListener)
+                delete(obj.TargetListener);
+            end
+            if ~isempty(obj.OnOffListener)
+                delete(obj.OnOffListener);
+            end
         end
     end
 
