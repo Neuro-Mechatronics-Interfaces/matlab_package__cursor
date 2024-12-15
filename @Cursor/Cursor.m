@@ -151,7 +151,24 @@ classdef Cursor < handle
                     try
                         mex('-outdir', pwd, sourceFile, '-lwinmm');
                     catch ME
-                        error('Failed to compile MEX file: %s\nError: %s', sourceFile, ME.message);
+                        if strcmp(ME.identifier,'MATLAB:mex:LibNotFound')
+                            w = dir(fullfile('C:', 'Program Files (x86)', 'Windows Kits', '10', 'Lib', '10.0.*'));
+                            if numel(w) == 0
+                                error("Missing Windows 10 SDK (or using incorrect path to existing SDK). Install or add existing Windows 10 SDK to environment path to compile the required mexfile.");
+                            end
+                            winmmPath = fullfile(w(1).folder, w(1).name, 'um', 'x64');
+                            if isfolder(winmmPath)
+                                if exist(fullfile(winmmPath,'WinMM.Lib'),'file')==0
+                                    error("Windows 10 SDK exists in the expected location, but WinMM.Lib is not present. Check SDK kit versions in %s.", w(1).folder);
+                                else
+                                    mex('-outdir', pwd, sourceFile, ['-L' winmmPath], '-lwinmm');
+                                end
+                            else
+                                error('No such folder exists: %s. Check Windows 10 SDK installation at %s.', winmmPath, fullfile(w(1).folder, w(1).name));
+                            end
+                        else
+                            error('Failed to compile MEX file: %s\nError: %s', sourceFile, ME.message);
+                        end
                     end
                 else
                     error('MEX file is missing and source file (%s) is not available.', sourceFile);
@@ -241,7 +258,7 @@ classdef Cursor < handle
             %START  Start sampling from joystick/gamepad. Also starts logging (if setLogging(true, 'filename') was called).
             if strcmp(obj.SampleTimer.Running, 'off')
                 if obj.LoggingEnabled
-                    obj.openLogFile();
+                    obj.openLogFile(obj.LogFile);
                 end
                 show(obj); % Pull up the visualization
                 obj.Game.setOnOffButtonState("Started");
@@ -318,6 +335,7 @@ classdef Cursor < handle
             if obj.LogFID < 0
                 if nargin > 1
                     obj.LogFile = logFile;
+                    obj.Game.setFileLabel(sprintf('File: %s', filename));
                     obj.LogFID = fopen(logFile, 'wb');
                 else
                     obj.LogFID = fopen(obj.LogFile, 'wb');
@@ -492,7 +510,6 @@ classdef Cursor < handle
             if fid == -1
                 error('Failed to open file: %s', filename);
             end
-            obj.Game.setFileLabel(sprintf('File: %s', filename));
 
             try
                 % Read the binary data as single-precision floating point
@@ -526,8 +543,10 @@ classdef Cursor < handle
             logData.CursorAcceleration = reshapedData(:, 9:10); % Cursor x, y acceleration
             logData.Extra = reshapedData(:,11); % Extra 'key' values like sync state etc.
             logTable = struct2table(logData);
+            logTable = sortrows(logTable,"Time","ascend");
             logTable.Time.TimeZone = 'America/New_York';
             logTable.Time.Format = 'uuuu-MM-dd''T''HH:mm:ss.SSS';
+            
         end
     end
 end
