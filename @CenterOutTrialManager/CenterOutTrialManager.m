@@ -47,7 +47,7 @@ classdef CenterOutTrialManager < handle
             statsTable.MoveDuration = obj.MoveDuration;
             statsTable.TotalDuration = obj.TotalDuration;
             [p,f,~] = fileparts(fname);
-            if exist(p,'dir')==0 && ~isempty(p)
+            if exist(p,'dir')==0 && ~isempty(p) && (strlength(p) > 0)
                 mkdir(p);
             end
             writetable(statsTable, fullfile(p, sprintf('%s.csv', f)));

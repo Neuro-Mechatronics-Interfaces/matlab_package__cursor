@@ -10,6 +10,7 @@ classdef CenterOutStateManager < handle
     end
 
     properties (Access = protected)
+        Audio (1,1) cursor.AudioManager
         TState (1,1) = 0;
         InTarget (1,2) logical = [false, false];
         HoldRequired (1,3) single = [1.0, 0.5, 0.5];
@@ -24,6 +25,7 @@ classdef CenterOutStateManager < handle
 
     methods
         function obj = CenterOutStateManager()
+            obj.Audio = cursor.AudioManager();
         end
         function update(obj, delta_t)
             if obj.State ~= cursor.CenterOutState.idle
@@ -56,6 +58,7 @@ classdef CenterOutStateManager < handle
                         return;
                     end
                     if obj.TState >= obj.HoldRequired(2)
+                        obj.Audio.go();
                         obj.setState(cursor.CenterOutState.go);
                         return;
                     end
@@ -76,6 +79,7 @@ classdef CenterOutStateManager < handle
                 case cursor.CenterOutState.t2_hold_1
                     if obj.TState >= obj.HoldRequired(3)
                         obj.Outcome = true;
+                        obj.Audio.success();
                         obj.setState(cursor.CenterOutState.idle);
                         return;
                     end

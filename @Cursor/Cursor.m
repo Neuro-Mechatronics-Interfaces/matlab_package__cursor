@@ -101,6 +101,7 @@ classdef Cursor < handle
     end
 
     properties (GetAccess = public, SetAccess = protected)
+        GameRunning (1,1) logical = false;
         CursorPosition (1,2) single = zeros(1,2,'single'); % Apparent cursor position (x, y)
         CursorVelocity (1,2) single = zeros(1,2,'single'); % Apparent cursor velocity (x, y)
         CursorAcceleration (1,2) single = zeros(1,2,'single'); % Apparent cursor acceleration (x, y)
@@ -112,7 +113,7 @@ classdef Cursor < handle
     properties (Hidden, Access = public)
         Manager (1,1) cursor.CenterOutTrialManager
         DragCoefficients (1,2) single = 0.5.*ones(1,2,'single'); % "Drag" on cursor (related to velocity; <x,y>)
-        VelocityGains (1,2) single = 3.*ones(1,2,'single'); % Gains on <x, y> velocity
+        VelocityGains (1,2) single = 1.5.*ones(1,2,'single'); % Gains on <x, y> velocity
         VelocityDeadzones (1,2) single = 0.0025.*ones(1,2,'single'); % Deadzones for <x,y>
         AccelerationGains (1,2) single = 0.05.*ones(1,2,'single'); % Gains on <x, y> acceleration
         SmoothingFactor (1,1) single = single(0.2); % Smoothing factor for cursor motion
@@ -203,6 +204,7 @@ classdef Cursor < handle
         end
 
         function handleNext(obj, ~, ~)
+            obj.GameRunning = true;
             eventData = cursor.TrialCompletedEventData(false, -1, 100.0, 100.0);
             obj.Manager.nextTrial(nan, eventData);
         end
@@ -224,22 +226,21 @@ classdef Cursor < handle
             end
         end
 
-        function handleGameOver(obj, src, evt)
+        function handleGameOver(obj, ~, ~)
             %HANDLEGAMEOVER  Handles "GameOver" events from the CenterOutTrialManager.
             obj.Game.setPrimaryTargetVisible(false);
             obj.Game.setSecondaryTargetVisible(false);
             obj.Game.setGameStateLabel("Game Over");
-            disp(src);
-            disp(evt);
             if strlength(obj.LogFile) > 0
                 saveFile = strrep(obj.LogFile, '.dat', '');
             else
                 saveFile = sprintf('%s_cursor_trials', string(datetime()));
             end
+            obj.Game.setFileLabel(sprintf("Saved Game: %s", saveFile)); % Revert to "Not Saving" text.
             obj.Manager.saveGameStats(saveFile);
             obj.Manager.resetIndex();
             set(obj.Game.Control.Button.Next,'String','Start New Game','Callback',@(s,e)obj.Game.startGame(s,e));
-            
+            obj.GameRunning = false;
         end
 
         function handleNewTrial(obj, src, evt)
@@ -300,6 +301,9 @@ classdef Cursor < handle
                 obj.Game.setOnOffButtonState("Stopped");
                 if obj.LoggingEnabled
                     obj.closeLogFile();
+                end
+                if obj.GameRunning
+                    obj.handleGameOver();
                 end
             end
         end
@@ -377,7 +381,6 @@ classdef Cursor < handle
             if obj.LogFID > 0
                 fclose(obj.LogFID);
                 obj.LogFID = -1;
-                obj.Game.setFileLabel(); % Revert to "Not Saving" text.
             end
         end
 
@@ -410,29 +413,32 @@ classdef Cursor < handle
             obj.CursorVelocity = max(min(obj.CursorVelocity + obj.CursorAcceleration .* obj.AccelerationGains, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
             v = obj.CursorVelocity .* obj.VelocityGains;
             v(abs(v) < obj.VelocityDeadzones) = 0;
-            obj.CursorPosition = max(min(obj.CursorPosition + v, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
-            obj.StateBuffer = [obj.StateBuffer(:, 2:end), [obj.CursorPosition'; obj.CursorVelocity'; obj.CursorAcceleration'; double(obj.ButtonState); ...
-                double(obj.Target); double(obj.Successful); double(obj.Attempts)]];
+            cursorPosition = max(min(obj.CursorPosition + v, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
 
             % Log data if enabled
             if obj.LoggingEnabled && obj.LogFID > 0
                 % Create a binary buffer for the data
-                obj.logData(dt);
+                obj.logData(cursorPosition, dt);
             end
 
-            obj.update(obj.CursorPosition(1), obj.CursorPosition(2), delta_t);
+            obj.update(cursorPosition(1), cursorPosition(2), delta_t);
         end
 
         function update(obj, x, y, delta_t)
             %UPDATE  Updates with x/y coordinate and time since last update.
+            obj.CursorPosition(1) = x;
+            obj.CursorPosition(2) = y;
+            obj.StateBuffer = [obj.StateBuffer(:, 2:end), [obj.CursorPosition'; obj.CursorVelocity'; obj.CursorAcceleration'; double(obj.ButtonState); ...
+                double(obj.Target); double(obj.Successful); double(obj.Attempts)]];
             update(obj.Game, x, y);
             update(obj.Manager, delta_t);
         end
 
-        function logData(obj, dt, extra)
+        function logData(obj, pos, dt, extra)
             %LOGDATA Gives option to externally log data to externally-opened binary file (i.e. in external acquisition loop). 
             arguments
                 obj
+                pos (1,2) single
                 dt (1,1) datetime
                 extra (1,1) single = 0
             end
@@ -440,7 +446,7 @@ classdef Cursor < handle
                 single(posixtime(dt) * 1e4), ... % Timestamp (microseconds as single)
                 single(obj.JoystickState), ...    % Joystick x, y
                 single(obj.ButtonState), ...     % Button state
-                single(obj.CursorPosition), ...  % Cursor x, y position
+                single(pos), ...  % Cursor x, y position
                 single(obj.CursorVelocity), ...  % Cursor x, y velocity
                 single(obj.CursorAcceleration), ... % Cursor x, y acceleration
                 single(obj.Manager.StateManager.State), ... % State of the game
