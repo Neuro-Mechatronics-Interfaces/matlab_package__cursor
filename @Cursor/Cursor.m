@@ -94,6 +94,9 @@ classdef Cursor < handle
 
     properties (Access = public)
         Game
+        Target (1,1) single = 0;
+        Successful (1,1) single = 0;
+        Attempts (1,1) single = 0;
         CursorPosition (1,2) single = zeros(1,2,'single'); % Apparent cursor position (x, y)
         CursorVelocity (1,2) single = zeros(1,2,'single'); % Apparent cursor velocity (x, y)
         CursorAcceleration (1,2) single = zeros(1,2,'single'); % Apparent cursor acceleration (x, y)
@@ -205,6 +208,11 @@ classdef Cursor < handle
 
         function handleTarget(obj, ~, evt)
             obj.Manager.StateManager.setCursorTargetState(evt.Index, evt.InTarget);
+            if evt.InTarget
+                obj.Target = single(evt.Index);
+            else
+                obj.Target = single(0);
+            end
         end
 
         function handleGameOver(obj, src, evt)
@@ -214,6 +222,12 @@ classdef Cursor < handle
             obj.Game.setGameStateLabel("Game Over");
             disp(src);
             disp(evt);
+            if strlength(obj.LogFile) > 0
+                saveFile = strrep(obj.LogFile, '.dat', '');
+            else
+                saveFile = sprintf('%s_cursor_trials', string(datetime()));
+            end
+            obj.Manager.saveGameStats(saveFile);
             obj.Manager.resetIndex();
             set(obj.Game.Control.Button.Next,'String','Start New Game','Callback',@(s,e)obj.Game.startGame(s,e));
             
@@ -229,6 +243,8 @@ classdef Cursor < handle
             obj.Game.setSecondaryTargetPosition(evt.T2(1), evt.T2(2));
             obj.Game.setSecondaryTargetSize(evt.TargetRadius(2));
             obj.Game.setTrialsLabel(src.NumSuccessful, src.NumAttempts);
+            obj.Successful = single(src.NumSuccessful);
+            obj.Attempts = single(src.NumAttempts);
             src.StateManager.setTrialParameters(evt.Hold, evt.Limit);
             drawnow();
         end
@@ -335,7 +351,7 @@ classdef Cursor < handle
             if obj.LogFID < 0
                 if nargin > 1
                     obj.LogFile = logFile;
-                    obj.Game.setFileLabel(sprintf('File: %s', filename));
+                    obj.Game.setFileLabel(sprintf('File: %s', logFile));
                     obj.LogFID = fopen(logFile, 'wb');
                 else
                     obj.LogFID = fopen(obj.LogFile, 'wb');
@@ -410,13 +426,17 @@ classdef Cursor < handle
                 extra (1,1) single = 0
             end
             logData = [ ...
-                single(posixtime(dt) * 1e6), ... % Timestamp (microseconds as single)
+                single(posixtime(dt) * 1e4), ... % Timestamp (microseconds as single)
                 single(obj.JoystickState), ...    % Joystick x, y
                 single(obj.ButtonState), ...     % Button state
                 single(obj.CursorPosition), ...  % Cursor x, y position
                 single(obj.CursorVelocity), ...  % Cursor x, y velocity
-                single(obj.CursorAcceleration) ... % Cursor x, y acceleration
-                single(extra)
+                single(obj.CursorAcceleration), ... % Cursor x, y acceleration
+                single(obj.Manager.StateManager.State), ... % State of the game
+                single(obj.Target), ... % Which target (if any) are we in?
+                single(obj.Successful), ...
+                single(obj.Attempts), ...
+                single(extra) 
                 ];
             % Write the packed binary data
             fwrite(obj.LogFID, logData, 'single');
@@ -523,7 +543,7 @@ classdef Cursor < handle
             fclose(fid);
 
             % Parse the raw data
-            numFields = 11; % Number of fields per entry
+            numFields = 15; % Number of fields per entry
             numEntries = length(rawData) / numFields;
 
             if mod(length(rawData), numFields) ~= 0
@@ -535,17 +555,20 @@ classdef Cursor < handle
 
             % Populate the output structure
             logData = struct();
-            logData.Time = datetime(reshapedData(:, 1) / 1e6, 'ConvertFrom', 'posixtime');              % Timestamps
+            logData.Time = datetime(reshapedData(:, 1) / 1e4, 'ConvertFrom', 'posixtime');              % Timestamps
             logData.JoystickState = reshapedData(:, 2:3);    % Joystick x, y state
             logData.ButtonState = reshapedData(:, 4);        % Button state
             logData.CursorPosition = reshapedData(:, 5:6);   % Cursor x, y position
             logData.CursorVelocity = reshapedData(:, 7:8);   % Cursor x, y velocity
             logData.CursorAcceleration = reshapedData(:, 9:10); % Cursor x, y acceleration
-            logData.Extra = reshapedData(:,11); % Extra 'key' values like sync state etc.
+            logData.GameState = reshapedData(:,11); % State of the Game
+            logData.Target = reshapedData(:,12);
+            logData.Successful = reshapedData(:,13);
+            logData.Attempts = reshapedData(:,14);
+            logData.Extra = reshapedData(:,15); % Extra 'key' values like sync state etc.
             logTable = struct2table(logData);
-            logTable = sortrows(logTable,"Time","ascend");
             logTable.Time.TimeZone = 'America/New_York';
-            logTable.Time.Format = 'uuuu-MM-dd''T''HH:mm:ss.SSS';
+            logTable.Time.Format = 'uuuu-MM-dd''T''HH:mm:ss.SSSSS';
             
         end
     end

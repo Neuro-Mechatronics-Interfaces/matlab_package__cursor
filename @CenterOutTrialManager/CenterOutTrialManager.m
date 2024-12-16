@@ -39,6 +39,21 @@ classdef CenterOutTrialManager < handle
             obj.TrialCompletedListener = addlistener(obj.StateManager, 'TrialCompleted', @obj.nextTrial);
         end
 
+        function saveGameStats(obj, fname)
+            statsTable = obj.Trials;
+            statsTable.Overshoots = obj.Overshoots;
+            statsTable.Outcome = obj.Outcome;
+            statsTable.TStart = obj.TStart;
+            statsTable.MoveDuration = obj.MoveDuration;
+            statsTable.TotalDuration = obj.TotalDuration;
+            [p,f,~] = fileparts(fname);
+            if exist(p,'dir')==0 && ~isempty(p)
+                mkdir(p);
+            end
+            writetable(statsTable, fullfile(p, sprintf('%s.csv', f)));
+            save(fullfile(p, sprintf('%s.mat', f)), 'statsTable', '-v7.3');
+        end
+
         function update(obj, delta_t)
             obj.TimeElapsed = obj.TimeElapsed + delta_t;
             obj.StateManager.update(delta_t);
@@ -70,17 +85,16 @@ classdef CenterOutTrialManager < handle
 
         function nextTrial(obj, ~, event)
             %NEXTTRIAL  Advance to the Next Trial.
-
+            if obj.CurrentTrialIndex > 0
+                obj.Overshoots(obj.CurrentTrialIndex) = event.NOvershoot;
+                obj.MoveDuration(obj.CurrentTrialIndex) = event.MoveDuration;
+                obj.TotalDuration(obj.CurrentTrialIndex) = event.TotalDuration;
+                obj.Outcome(obj.CurrentTrialIndex) = event.Successful;
+                obj.TStart(obj.CurrentTrialIndex) = obj.TimeElapsed;
+                obj.NumSuccessful = obj.NumSuccessful + event.Successful;
+            end
             % Increment the trial index
-            if obj.CurrentTrialIndex < height(obj.Trials)
-                if obj.CurrentTrialIndex > 0
-                    obj.Overshoots(obj.CurrentTrialIndex) = event.NOvershoot;
-                    obj.MoveDuration(obj.CurrentTrialIndex) = event.MoveDuration;
-                    obj.TotalDuration(obj.CurrentTrialIndex) = event.TotalDuration;
-                    obj.Outcome(obj.CurrentTrialIndex) = event.Successful;
-                    obj.TStart(obj.CurrentTrialIndex) = obj.TimeElapsed;
-                    obj.NumSuccessful = obj.NumSuccessful + event.Successful;
-                end
+            if obj.CurrentTrialIndex < height(obj.Trials) % Increment after logging: we start with Trial Index 1 due to indexing into loaded table.
                 obj.CurrentTrialIndex = obj.CurrentTrialIndex + 1;
                 newTrialEventData = cursor.NewTrialEventData(obj.Trials(obj.CurrentTrialIndex, :));
                 obj.NumAttempts = obj.NumAttempts + 1;
