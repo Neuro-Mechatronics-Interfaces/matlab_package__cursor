@@ -97,23 +97,28 @@ classdef Cursor < handle
         Target (1,1) single = 0;
         Successful (1,1) single = 0;
         Attempts (1,1) single = 0;
+        
+    end
+
+    properties (GetAccess = public, SetAccess = protected)
         CursorPosition (1,2) single = zeros(1,2,'single'); % Apparent cursor position (x, y)
         CursorVelocity (1,2) single = zeros(1,2,'single'); % Apparent cursor velocity (x, y)
         CursorAcceleration (1,2) single = zeros(1,2,'single'); % Apparent cursor acceleration (x, y)
         JoystickState = zeros(1,2,'int8'); % Raw joystick state (x, y)
         ButtonState = zeros(1,1,'uint8'); % Raw button state
+        StateBuffer (10,:) double
     end
 
     properties (Hidden, Access = public)
         Manager (1,1) cursor.CenterOutTrialManager
         DragCoefficients (1,2) single = 0.5.*ones(1,2,'single'); % "Drag" on cursor (related to velocity; <x,y>)
-        VelocityGains (1,2) single = 15.*ones(1,2,'single'); % Gains on <x, y> velocity
+        VelocityGains (1,2) single = 3.*ones(1,2,'single'); % Gains on <x, y> velocity
         VelocityDeadzones (1,2) single = 0.0025.*ones(1,2,'single'); % Deadzones for <x,y>
         AccelerationGains (1,2) single = 0.05.*ones(1,2,'single'); % Gains on <x, y> acceleration
         SmoothingFactor (1,1) single = single(0.2); % Smoothing factor for cursor motion
 
         SampleTimer % Timer object for background sampling
-        SamplePeriod = 0.01; % Sampling period (default 10 ms)
+        SamplePeriod = 0.002; % Sampling period (default 2 ms)
         JoystickID = 0; % Joystick ID to use
         LoggingEnabled = false; % Flag to indicate logging
         LogFile = ""; % Log file name
@@ -128,6 +133,7 @@ classdef Cursor < handle
         NextListener
         TargetListener
         OnOffListener
+        BufferSamples
     end
 
     events
@@ -137,9 +143,10 @@ classdef Cursor < handle
 
     methods
         % Constructor
-        function obj = Cursor(structureFile)
+        function obj = Cursor(structureFile, options)
             arguments
                 structureFile {mustBeTextScalar} = 'CenterOut.csv';
+                options.BufferSamples (1,1) {mustBePositive, mustBeInteger} = 20;
             end
 
             % Ensure the folder is on the MATLAB path
@@ -177,6 +184,8 @@ classdef Cursor < handle
                     error('MEX file is missing and source file (%s) is not available.', sourceFile);
                 end
             end
+            obj.BufferSamples = options.BufferSamples;
+            obj.StateBuffer = zeros(10,obj.BufferSamples);
             obj.Game = cursor.GameContainer();
             obj.SampleTimer = timer( ...
                 'ExecutionMode', 'fixedRate', ...
@@ -402,6 +411,8 @@ classdef Cursor < handle
             v = obj.CursorVelocity .* obj.VelocityGains;
             v(abs(v) < obj.VelocityDeadzones) = 0;
             obj.CursorPosition = max(min(obj.CursorPosition + v, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
+            obj.StateBuffer = [obj.StateBuffer(:, 2:end), [obj.CursorPosition'; obj.CursorVelocity'; obj.CursorAcceleration'; double(obj.ButtonState); ...
+                double(obj.Target); double(obj.Successful); double(obj.Attempts)]];
 
             % Log data if enabled
             if obj.LoggingEnabled && obj.LogFID > 0
