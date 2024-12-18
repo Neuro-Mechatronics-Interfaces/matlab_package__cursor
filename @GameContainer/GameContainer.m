@@ -16,7 +16,7 @@ classdef GameContainer < handle
         Target2  % Handle to a secondary target destination
         Target2Radius (1,1) {mustBePositive, mustBeInteger} = 32; % 
         Figure   % "Parent" figure
-        Visible (1,1) logical = false;
+        Visible (1,1) logical = true;
     end
 
     events

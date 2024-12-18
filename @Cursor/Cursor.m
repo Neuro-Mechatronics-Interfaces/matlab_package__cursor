@@ -430,7 +430,7 @@ classdef Cursor < handle
         end
 
         function updatePosition(obj, delta, delta_t)
-            cursorPosition = max(min(delta + v, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
+            cursorPosition = max(min(obj.CursorPosition + delta, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
             obj.update(cursorPosition(1), cursorPosition(2), delta_t);
         end
 
