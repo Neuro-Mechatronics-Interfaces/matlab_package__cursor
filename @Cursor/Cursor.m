@@ -408,19 +408,29 @@ classdef Cursor < handle
 
             % Apply smoothing to cObj position
             delta = single(obj.JoystickState);
-            obj.CursorAcceleration = obj.CursorAcceleration * (1 - obj.SmoothingFactor) + ...
-                delta * obj.SmoothingFactor - (1 - abs(delta)) .* obj.DragCoefficients .* obj.CursorVelocity;
-            obj.CursorVelocity = max(min(obj.CursorVelocity + obj.CursorAcceleration .* obj.AccelerationGains, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
-            v = obj.CursorVelocity .* obj.VelocityGains;
-            v(abs(v) < obj.VelocityDeadzones) = 0;
-            cursorPosition = max(min(obj.CursorPosition + v, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
-
-            % Log data if enabled
+            obj.updateAcceleration(delta, delta_t);
+            
             if obj.LoggingEnabled && obj.LogFID > 0
                 % Create a binary buffer for the data
                 obj.logData(cursorPosition, dt);
             end
+        end
 
+        function updateAcceleration(obj, delta, delta_t)
+            obj.CursorAcceleration = obj.CursorAcceleration * (1 - obj.SmoothingFactor) + ...
+                delta * obj.SmoothingFactor - (1 - abs(delta)) .* obj.DragCoefficients .* obj.CursorVelocity;
+            obj.updateVelocity(obj.CursorAcceleration.* obj.AccelerationGains, delta_t);
+        end
+
+        function updateVelocity(obj, delta, delta_t)
+            obj.CursorVelocity = max(min(obj.CursorVelocity + delta, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
+            v = obj.CursorVelocity .* obj.VelocityGains;
+            v(abs(v) < obj.VelocityDeadzones) = 0;
+            obj.updatePosition(v, delta_t);
+        end
+
+        function updatePosition(obj, delta, delta_t)
+            cursorPosition = max(min(delta + v, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
             obj.update(cursorPosition(1), cursorPosition(2), delta_t);
         end
 
