@@ -11,7 +11,7 @@ Simple `MATLAB` Cursor class to log/display 2D position of virtual cursor that i
 ## Installation
 Add this as a submodule to your existing project- but make sure to put it in a folder named `+cursor`
 ```bat
-git submodule add git@github.com:Neuro-Mechatronics-Interfaces/matlab_class__Cursor.git +cursor
+git submodule add git@github.com:Neuro-Mechatronics-Interfaces/matlab_package__cursor.git +cursor
 git submodule update --init --recursive
 ```
 
