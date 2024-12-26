@@ -1,5 +1,5 @@
 classdef Cursor < handle
-    % Cursor - A joystick-based cursor class with logging and event handling.
+    %CURSOR A joystick-based cursor class with logging and event handling.
     %
     % The Cursor class provides an interface to interact with a joystick device
     % for controlling a 2D cursor, logging joystick and cursor states, and 
@@ -20,13 +20,13 @@ classdef Cursor < handle
     %   cObj = cursor.Cursor();
     %
     %   % Start logging to a binary file
-    %   cObj.setLogging(true, 'joystick_log.dat');
+    %   cObj.setLogging(true, 'joystick_log.cursordata');
     %   cObj.start();
     %   pause(5);  % Log data for 5 seconds
     %   cObj.stop();
     %
     %   % Read the logged data
-    %   logData = Cursor.readLogFile('joystick_log.dat');
+    %   logData = Cursor.readLogFile('joystick_log.cursordata');
     %   disp(logData);
     %
     %   % Visualize the cursor trajectory
@@ -69,12 +69,12 @@ classdef Cursor < handle
     %
     % Example 1: Logging and Reading Data
     %   cObj = cursor.Cursor();
-    %   cObj.setLogging(true, 'joystick_log.dat');
+    %   cObj.setLogging(true, 'joystick_log.cursordata');
     %   cObj.start();
     %   pause(5);
     %   cObj.stop();
     %
-    %   logData = cursor.Cursor.readLogFile('joystick_log.dat');
+    %   logData = cursor.Cursor.readLogFile('joystick_log.cursordata');
     %   disp(logData);
     %
     % Example 2: Using Event Listeners
@@ -124,7 +124,7 @@ classdef Cursor < handle
         LoggingEnabled = false; % Flag to indicate logging
         LogFile = ""; % Log file name
         LogFID = -1; % File identifier for logging
-        LastTick (1,1) datetime = datetime();
+        MainTick (1,1) uint64
     end
 
     properties (Access = protected)
@@ -137,17 +137,29 @@ classdef Cursor < handle
         BufferSamples
     end
 
+    properties (Constant, Access = private)
+        BINARY_LOGFILE_EXTENSION = "cursordata";
+    end
+
     events
         ButtonUp % Triggered when button is released
         ButtonDown % Triggered when button is pressed
     end
 
     methods
-        % Constructor
         function obj = Cursor(structureFile, options)
+            %CURSOR Constructs an instance of the cursor.Cursor object.
+            %
+            %   The Cursor class provides an interface to interact with a 
+            %   joystick device for controlling a 2D cursor, logging 
+            %   joystick and cursor states, and detecting button 
+            %   press/release events. It includes visualization of cursor
+            %   movement in real-time and logging to a binary file for 
+            %   later analysis.
             arguments
                 structureFile {mustBeTextScalar} = 'CenterOut.csv';
                 options.BufferSamples (1,1) {mustBePositive, mustBeInteger} = 20;
+                options.MainTick (1,1) uint64 = tic();
             end
 
             % Ensure the folder is on the MATLAB path
@@ -186,13 +198,14 @@ classdef Cursor < handle
                 end
             end
             obj.BufferSamples = options.BufferSamples;
+            obj.MainTick = options.MainTick;
             obj.StateBuffer = zeros(10,obj.BufferSamples);
             obj.Game = cursor.GameContainer();
             obj.SampleTimer = timer( ...
                 'ExecutionMode', 'fixedRate', ...
                 'Period', obj.SamplePeriod, ...
                 'Name', "Cursor-Sampling Timer", ...
-                'TimerFcn', @(~,event)obj.sample(datetime(event.Data.time)));
+                'TimerFcn', @(~,event)obj.sample());
             packagePath = fileparts(folderPath);
             obj.Manager = cursor.CenterOutTrialManager(fullfile(packagePath,'.trial_structure',structureFile));
             obj.GameOverListener = addlistener(obj.Manager, 'GameOver', @obj.handleGameOver);
@@ -201,15 +214,18 @@ classdef Cursor < handle
             obj.NewStateListener = addlistener(obj.Manager.StateManager, 'NewState', @obj.handleNewState);
             obj.TargetListener = addlistener(obj.Game, 'Target', @obj.handleTarget);
             obj.OnOffListener = addlistener(obj.Game, 'OnOff', @obj.handleOnOff);
+            
         end
 
         function handleNext(obj, ~, ~)
+            %HANDLENEXT Handles "Next" events indicating to go to the next trial (for example, when "Skip" button is pressed or on the initial start of trials).
             obj.GameRunning = true;
             eventData = cursor.TrialCompletedEventData(false, -1, 100.0, 100.0);
             obj.Manager.nextTrial(nan, eventData);
         end
 
         function handleOnOff(obj, ~, evt)
+            %HANDLEONOFF Handles CURSOR-ON or CURSOR-OFF "onOff" events.
             if evt.OnOff
                 start(obj);
             else
@@ -218,6 +234,7 @@ classdef Cursor < handle
         end
 
         function handleTarget(obj, ~, evt)
+            %HANDLETARGET Handles "Target" events to update whether the cursor is inside or outside the target, which is used elsewhere to update its color and the state of the task.
             obj.Manager.StateManager.setCursorTargetState(evt.Index, evt.InTarget);
             if evt.InTarget
                 obj.Target = single(evt.Index);
@@ -232,7 +249,7 @@ classdef Cursor < handle
             obj.Game.setSecondaryTargetVisible(false);
             obj.Game.setGameStateLabel("Game Over");
             if strlength(obj.LogFile) > 0
-                saveFile = strrep(obj.LogFile, '.dat', '');
+                saveFile = strrep(obj.LogFile, sprintf('.%s', obj.BINARY_LOGFILE_EXTENSION), '');
             else
                 saveFile = sprintf('%s_cursor_trials', string(datetime()));
             end
@@ -308,6 +325,15 @@ classdef Cursor < handle
             end
         end
 
+        function setMainTick(obj, newMainTick)
+            %SETMAINTICK  Update the MainTick used for timestamping logs.
+            arguments
+                obj
+                newMainTick (1,1) uint64 % As returned by `tic()` e.g. from before starting some other acquisition loop
+            end
+            obj.MainTick = newMainTick;
+        end
+
         % Set logging state and filename
         function setLogging(obj, enable, filename)
             %SETLOGGING Sets logging state and filename.
@@ -320,7 +346,7 @@ classdef Cursor < handle
             %   filename (1,1) string - Sets file where logging happens.
             %
             % Example 1: Start logging
-            %   cObj.setLogging(true, 'mycursor.dat');
+            %   cObj.setLogging(true, 'my_cursor_logs.cursordata');
             %   start(cObj);
             %
             % Example 2: Stop logging
@@ -328,14 +354,14 @@ classdef Cursor < handle
             arguments
                 obj
                 enable (1,1) logical
-                filename (1,1) string = "default_cursor_log.dat";
+                filename (1,1) string = "default_cursor_log";
             end
             if strcmp(obj.SampleTimer.Running, 'on')
                 error('Cannot change logging state while sampling is running.');
             end
             obj.LoggingEnabled = enable;
             if enable
-                obj.LogFile = filename;
+                obj.LogFile = obj.ensureValidLogFilename(filename);
             else
                 obj.LogFile = "";
             end
@@ -363,7 +389,7 @@ classdef Cursor < handle
             end
             if obj.LogFID < 0
                 if nargin > 1
-                    obj.LogFile = logFile;
+                    obj.LogFile = obj.ensureValidLogFilename(logFile);
                     obj.Game.setFileLabel(sprintf('File: %s', logFile));
                     obj.LogFID = fopen(logFile, 'wb');
                 else
@@ -385,11 +411,10 @@ classdef Cursor < handle
         end
 
         % Timer callback for joystick sampling
-        function sample(obj, dt)
+        function sample(obj)
             %SAMPLE  Read joystick and button data in timer-mediated loop.
             
-            delta_t = single(seconds(dt - obj.LastTick));
-            obj.LastTick = dt;
+            ts = single(tic(obj.MainTick));
             [x, y, buttons] = WinJoystickMex(obj.JoystickID);
 
             % Update joystick state
@@ -408,52 +433,55 @@ classdef Cursor < handle
 
             % Apply smoothing to cObj position
             delta = single(obj.JoystickState);
-            obj.updateAcceleration(delta, delta_t);
+            obj.updateAcceleration(delta, ts);
             
             if obj.LoggingEnabled && obj.LogFID > 0
                 % Create a binary buffer for the data
-                obj.logData(cursorPosition, dt);
+                obj.logData(cursorPosition, ts);
             end
         end
 
-        function updateAcceleration(obj, delta, delta_t)
+        function updateAcceleration(obj, delta, ts)
+            %UPDATEACCELERATION Updates the acceleration of the cursor, changing the acceleration by some delta vector while applying an exponential moving average smoother.
             obj.CursorAcceleration = obj.CursorAcceleration * (1 - obj.SmoothingFactor) + ...
                 delta * obj.SmoothingFactor - (1 - abs(delta)) .* obj.DragCoefficients .* obj.CursorVelocity;
-            obj.updateVelocity(obj.CursorAcceleration.* obj.AccelerationGains, delta_t);
+            obj.updateVelocity(obj.CursorAcceleration.* obj.AccelerationGains, ts);
         end
 
-        function updateVelocity(obj, delta, delta_t)
+        function updateVelocity(obj, delta, ts)
+            %UPDATEVELOCITY Updates the velocity of the cursor, modifying it by an acceleration vector while applying a clipping boundary nonlinearity.
             obj.CursorVelocity = max(min(obj.CursorVelocity + delta, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
             v = obj.CursorVelocity .* obj.VelocityGains;
             v(abs(v) < obj.VelocityDeadzones) = 0;
-            obj.updatePosition(v, delta_t);
+            obj.updatePosition(v, ts);
         end
 
-        function updatePosition(obj, delta, delta_t)
+        function updatePosition(obj, delta, ts)
+            %UPDATEPOSITION Updates the pixel-center of the cursor, by displacing it from its current position while applying a clipping boundary nonlinearity.
             cursorPosition = max(min(obj.CursorPosition + delta, obj.Game.Boundaries(2)),obj.Game.Boundaries(1));
-            obj.update(cursorPosition(1), cursorPosition(2), delta_t);
+            obj.update(cursorPosition(1), cursorPosition(2), ts);
         end
 
-        function update(obj, x, y, delta_t)
+        function update(obj, x, y, ts)
             %UPDATE  Updates with x/y coordinate and time since last update.
             obj.CursorPosition(1) = x;
             obj.CursorPosition(2) = y;
             obj.StateBuffer = [obj.StateBuffer(:, 2:end), [obj.CursorPosition'; obj.CursorVelocity'; obj.CursorAcceleration'; double(obj.ButtonState); ...
                 double(obj.Target); double(obj.Successful); double(obj.Attempts)]];
             update(obj.Game, x, y);
-            update(obj.Manager, delta_t);
+            update(obj.Manager, ts);
         end
 
-        function logData(obj, pos, dt, extra)
+        function logData(obj, pos, ts, extra)
             %LOGDATA Gives option to externally log data to externally-opened binary file (i.e. in external acquisition loop). 
             arguments
                 obj
                 pos (1,2) single
-                dt (1,1) datetime
+                ts (1,1) single
                 extra (1,1) single = 0
             end
             logData = [ ...
-                single(posixtime(dt) * 1e4), ... % Timestamp (microseconds as single)
+                single(ts), ... % Timestamp (microseconds as single)
                 single(obj.JoystickState), ...    % Joystick x, y
                 single(obj.ButtonState), ...     % Button state
                 single(pos), ...  % Cursor x, y position
@@ -526,6 +554,21 @@ classdef Cursor < handle
         end
     end
 
+    methods (Access = protected)
+        function validFilename = ensureValidLogFilename(obj, filename)
+            %ENSUREVALIDLOGFILENAME Ensures that the log-file binary has correct file-extension and that the folder it is to be saved in actually exists.
+            [p,f,~] = fileparts(filename);
+            % Make sure folder containing new file exists:
+            if strlength(p) < 1
+                p = pwd;
+            elseif exist(p, 'dir') == 0
+                mkdir(p);
+            end
+            % Make sure that file extension is correct
+            validFilename = string(fullfile(p, sprintf("%s.%s", f, obj.BINARY_LOGFILE_EXTENSION)));
+        end
+    end
+
     methods (Static)
         function logTable = readLogFile(filename)
             % readLogFile Reads the log file created by the Cursor class.
@@ -541,12 +584,12 @@ classdef Cursor < handle
             %
             % Example:
             %   cObj = Cursor();
-            %   cObj.setLogging(true, 'joystick_data.dat');
+            %   cObj.setLogging(true, 'joystick_data.cursordata');
             %   cObj.start();
             %   pause(5);
             %   cObj.stop();
             %   cObj.setLogging(false);
-            %   logData = Cursor.readLogFile('joystick_data.dat');
+            %   logData = Cursor.readLogFile('joystick_data.cursordata');
 
             if nargin < 1 || ~isfile(filename)
                 error('File not found or filename not provided: %s', filename);
@@ -582,7 +625,7 @@ classdef Cursor < handle
 
             % Populate the output structure
             logData = struct();
-            logData.Time = datetime(reshapedData(:, 1) / 1e4, 'ConvertFrom', 'posixtime');              % Timestamps
+            logData.Time = reshapedData(:, 1);               % Times relative to main acquisition loop "tic"
             logData.JoystickState = reshapedData(:, 2:3);    % Joystick x, y state
             logData.ButtonState = reshapedData(:, 4);        % Button state
             logData.CursorPosition = reshapedData(:, 5:6);   % Cursor x, y position
@@ -594,8 +637,6 @@ classdef Cursor < handle
             logData.Attempts = reshapedData(:,14);
             logData.Extra = reshapedData(:,15); % Extra 'key' values like sync state etc.
             logTable = struct2table(logData);
-            logTable.Time.TimeZone = 'America/New_York';
-            logTable.Time.Format = 'uuuu-MM-dd''T''HH:mm:ss.SSSSS';
             
         end
     end
