@@ -437,7 +437,7 @@ classdef Cursor < handle
             
             if obj.LoggingEnabled && obj.LogFID > 0
                 % Create a binary buffer for the data
-                obj.logData(cursorPosition, ts);
+                obj.logData(obj.CursorPosition, ts);
             end
         end
 
